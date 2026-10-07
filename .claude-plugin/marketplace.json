@@ -1,0 +1,12 @@
+{
+  "name": "claude-usage-band",
+  "description": "The usage-band mod for Claude Code.",
+  "owner": { "name": "benpaternostro", "url": "https://github.com/benpaternostro" },
+  "plugins": [
+    {
+      "name": "usage-band",
+      "source": "./",
+      "description": "Shows context window fill and plan usage limits in a band above the prompt."
+    }
+  ]
+}
