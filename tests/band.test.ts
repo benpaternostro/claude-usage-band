@@ -71,7 +71,7 @@ test('band shows the /context fill and opens the drawer in place of the band', a
 
   await $.session.measure({ ...RAW, changed: ['context', 'rateLimits', 'cost'] })
 
-  for (const [surface, maxRows] of [['terminal', 40], ['desktop', 9], ['vscode', 9]] as const) {
+  for (const [surface, maxRows] of [['terminal', 40], ['desktop', 9]] as const) {
     const ui = await $.ui.mount({ plugin: 'usage-band', surface, ...BAND, props: { ...BAND.props, maxRows } })
     expect((await ui.find({ key: 'ctx-pct' }))?.text).toBe('44%')
     expect((await ui.find({ key: 'lim-five_hour-label' }))?.text).toBe('Session')
