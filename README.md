@@ -2,6 +2,8 @@
 
 A Claude Code mod that shows a usage band above the prompt, in the terminal and in the desktop Code tab.
 
+> Unofficial. This project is not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.
+
 ![The usage band above the prompt](docs/band.png)
 
 The band shows:
