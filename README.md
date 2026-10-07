@@ -2,6 +2,8 @@
 
 A Claude Code mod that shows a usage band above the prompt, in the terminal and in the desktop Code tab.
 
+![The usage band above the prompt](docs/band.png)
+
 The band shows:
 
 - **Context**: how full the context window is, coloured by category as `/context` shows it.
@@ -10,6 +12,8 @@ The band shows:
 - **Credits**: the spend limit, when your plan has one.
 
 Click a meter or the `＋` toggle to open the drawer. The drawer shows the full context breakdown, the space left before auto-compact, the session cost, and a **Compact session** button.
+
+![The open drawer with the context breakdown and plan limits](docs/drawer.png)
 
 The context breakdown is a local estimate. It sends no API request.
 
