@@ -226,7 +226,9 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const open = await read($, isOpen)
 
-    const bar = (id: string, bar: Bar, label: string, isWide: boolean) => {
+    // A wide bar spans `width` cells on the terminal: the drawer's inner width
+    // unless it sits in a narrower column.
+    const bar = (id: string, bar: Bar, label: string, isWide: boolean, width = e.props.bodyColumns - 2) => {
       if (e.surface === 'desktop') {
         const { Svg } = $.ui.resolve(e)
         // A wide bar fills a row of its own, centred in it, so the text above
@@ -239,7 +241,7 @@ export const register: Register = on => {
           <Svg key={id} source={svgBar(bar, BAR_PX, 4, 1)} alt={label} width={BAR_PX} height={4} />
         )
       }
-      const { cells, free } = textCells(bar.parts, isWide ? Math.max(10, e.props.bodyColumns - 2) : BAR_CELLS)
+      const { cells, free } = textCells(bar.parts, isWide ? Math.max(10, width) : BAR_CELLS)
       return (
         <Box key={id}>
           {cells.map((c, i) => (
@@ -326,6 +328,9 @@ export const register: Register = on => {
       // the band scrolls. The limits share a row and the cost rides the compact
       // row, so the breakdown keeps its room; gaps only when all of it fits.
       const limitCols = e.props.bodyColumns >= 70 ? 2 : 1
+      // The columns share the inner width; the first ones take any odd cells.
+      const limitSpan = e.props.bodyColumns - 2 - 4 * (limitCols - 1)
+      const limitWidth = (c: number) => Math.floor(limitSpan / limitCols) + (c < limitSpan % limitCols ? 1 : 0)
       const limitRows = Array.from({ length: Math.ceil(s.limits.length / limitCols) }, (_, r) =>
         s.limits.slice(r * limitCols, r * limitCols + limitCols),
       )
@@ -355,7 +360,7 @@ export const register: Register = on => {
           </Box>
           {limitRows.map((row, r) => (
             <Box key={`d-lims-${r}`} flexDirection="row" columnGap={4}>
-              {row.map(l => {
+              {row.map((l, c) => {
                 const reset = resetText(l, now)
                 return (
                   <Box key={`d-lim-${l.kind}`} flexDirection="column" flexGrow={1} flexShrink={1} width={`${Math.floor(100 / limitCols)}%`}>
@@ -363,7 +368,7 @@ export const register: Register = on => {
                       <Text wrap="truncate-end">{LONG_LABELS[l.kind] ?? l.kind}</Text>
                       <Text dimColor wrap="truncate-end">{`${reset}${reset ? '  ' : ''}${l.percentUsed}%`}</Text>
                     </Box>
-                    {bar(`d-lim-bar-${l.kind}`, limitBar(l, now), `${l.kind} ${l.percentUsed}%`, true)}
+                    {bar(`d-lim-bar-${l.kind}`, limitBar(l, now), `${l.kind} ${l.percentUsed}%`, true, limitWidth(c))}
                   </Box>
                 )
               })}
@@ -386,12 +391,16 @@ export const register: Register = on => {
         {/* Only Buttons take a press, so each word of the meter is one: a click
             anywhere on its text opens the drawer. */}
         <Button key={`${id}-label`} plain dimColor label={label} onPress={() => toggle($)} />
-        {/* A bar takes no press, so a blank plain Button lies over it. */}
+        {/* A bar takes no press, so on the desktop a blank plain Button lies
+            over it. On a text surface that Button would paint over the bar's
+            cells, so there the label and figures take the press alone. */}
         <Box flexDirection="row" alignItems="center">
           {bar(`${id}-bar`, b, `${label} ${percent ?? 0}%`, false)}
-          <Box position="absolute" top={0} left={0}>
-            <Button key={`${id}-hit`} plain label={HIT_LABEL} hover={{ inverse: false }} onPress={() => toggle($)} />
-          </Box>
+          {e.surface === 'desktop' && (
+            <Box position="absolute" top={0} left={0}>
+              <Button key={`${id}-hit`} plain label={HIT_LABEL} hover={{ inverse: false }} onPress={() => toggle($)} />
+            </Box>
+          )}
         </Box>
         <Button key={`${id}-pct`} plain label={percent === undefined ? '—' : `${percent}%`} onPress={() => toggle($)} />
         {note !== '' && <Button key={`${id}-note`} plain dimColor label={note} onPress={() => toggle($)} />}

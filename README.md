@@ -19,9 +19,22 @@ Click a meter or the `＋` toggle to open the drawer. The drawer shows the full 
 
 The context breakdown is a local estimate. It sends no API request.
 
+### In the terminal
+
+The terminal draws the bars as text. Click a meter's label or figures, or the `＋` toggle, to open the drawer.
+
+![The usage band above the prompt in the terminal](docs/cli-band.webp)
+
+![The open drawer in the terminal](docs/cli-drawer.webp)
+
+### Not supported: the VS Code extension
+
+The Claude Code extension for VS Code loads the mod and runs its hooks, but it does not draw plugin UI. It shows neither the band above the prompt nor a plugin status line. This was tested on extension 2.1.291. Use the terminal, including the VS Code integrated terminal, or the desktop Code tab.
+
 ## Requirements
 
 - Claude Code 2.1.275 or later. The mod was tested on 2.1.288.
+- The terminal or the desktop Code tab. The VS Code extension does not show the band.
 
 > The function-hook plugin API is in early access. It can change between Claude Code releases without notice.
 

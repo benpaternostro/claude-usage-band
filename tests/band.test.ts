@@ -83,6 +83,11 @@ test('band shows the /context fill and opens the drawer in place of the band', a
     expect(await ui.find({ type: 'Text', text: '88.4k / 200k (44%)' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Session limit' })).toBeDefined()
     expect(await ui.find({ key: 'compact-now' })).toBeDefined()
+    if (surface !== 'desktop') {
+      // A limit bar fits its half-width column: (80 - 2 padding - 4 gap) / 2.
+      const cells = (await ui.find({ key: 'd-lim-bar-five_hour' }))?.text ?? ''
+      expect(cells.length).toBe(37)
+    }
     expect(await ui.find({ type: 'Text', text: 'Messages' })).toBeDefined()
     expect(await ui.find({ key: 'ctx' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: '$1.23' })).toBeDefined()
@@ -91,7 +96,9 @@ test('band shows the /context fill and opens the drawer in place of the band', a
     expect((await ui.find({ key: 'details' }))?.text).toBe(OPEN_GLYPH)
     expect(await ui.find({ key: 'd-ctx' })).toBeUndefined()
 
-    for (const key of ['ctx-label', 'ctx-hit']) {
+    // The blank hit Button over a bar is desktop-only: on a text surface it paints over the bar.
+    expect((await ui.find({ key: 'ctx-hit' })) !== undefined).toBe(surface === 'desktop')
+    for (const key of surface === 'desktop' ? ['ctx-label', 'ctx-hit'] : ['ctx-label']) {
       await ui.press({ key })
       expect((await ui.find({ key: 'details' }))?.text).toBe(CLOSE_GLYPH)
       await ui.press({ key: 'details' })
