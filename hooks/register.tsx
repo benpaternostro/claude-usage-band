@@ -2,9 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionContextUsage, SessionCost, SessionRateLimit } from 'claude-code'
 
 import type { Limit, Segment, Snapshot } from '../types'
+import { cacheText, cacheTtl } from './cache'
 
 const snapshot = atom({ plugin: 'usage-band', key: 'snapshot' } as const, null)
 const isOpen = atom({ plugin: 'usage-band', key: 'isOpen' } as const, false)
+const cacheExpiresAt = atom({ plugin: 'usage-band', key: 'cacheExpiresAt' } as const, null)
 
 // Full-width glyphs: the same size as the app's close control, and the same
 // advance as each other, so the toggle never moves.
@@ -200,10 +202,55 @@ async function toggle($: EngineInterface) {
 }
 
 export const register: Register = on => {
+  let ticker: ReturnType<EngineInterface['clock']['every']> | undefined
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await update($, isOpen, () => false)
+    await update($, cacheExpiresAt, () => null)
     await refresh($)
+    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    return result
+  })
+
+  on('session.end', async (_, e, next) => {
+    ticker?.cancel()
+    ticker = undefined
+    return next(e)
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    if (e.agentId || !result.usage) return result
+    const usage = result.usage
+    if (usage.cache_read_input_tokens + usage.cache_creation_input_tokens === 0) {
+      await update($, cacheExpiresAt, () => null)
+      return result
+    }
+    const now = await $.clock.now()
+    const [force5m, ttl, enable1h, settings, session] = await Promise.all([
+      $.env.get('FORCE_PROMPT_CACHING_5M'),
+      $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL'),
+      $.env.get('ENABLE_PROMPT_CACHING_1H'),
+      $.settings.read(),
+      $.session.usage(),
+    ])
+    const duration = cacheTtl({ force5m, ttl, enable1h, setting: settings.promptCacheTtl, limits: limitsOf(session) })
+    await update($, cacheExpiresAt, () => now + duration)
+    return result
+  })
+
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    const result = await next(e)
+    await update($, cacheExpiresAt, () => null)
+    return result
+  })
+
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agentId && e.trigger !== 'precompute' && result.skip === undefined) {
+      await update($, cacheExpiresAt, () => null)
+    }
     return result
   })
 
@@ -225,6 +272,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const now = await $.clock.now()
     const open = await read($, isOpen)
+    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    const cacheLabel = cacheText(await read($, cacheExpiresAt), now)
 
     // A wide bar spans `width` cells on the terminal: the drawer's inner width
     // unless it sits in a narrower column.
@@ -413,7 +462,10 @@ export const register: Register = on => {
           {meter('ctx', 'Context', ctx, s.percent, '')}
           {s.limits.map(l => meter(`lim-${l.kind}`, SHORT_LABELS[l.kind] ?? l.kind, limitBar(l, now), l.percentUsed, resetIn(l, now)))}
         </Box>
-        {toggleButton}
+        <Box key="band-right" flexDirection="row" alignItems="center" columnGap={2} flexShrink={0}>
+          <Button key="cache-time" plain dimColor label={cacheLabel} onPress={() => toggle($)} />
+          {toggleButton}
+        </Box>
       </Box>
     )
   })

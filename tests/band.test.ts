@@ -76,6 +76,7 @@ test('band shows the /context fill and opens the drawer in place of the band', a
     expect((await ui.find({ key: 'ctx-pct' }))?.text).toBe('44%')
     expect((await ui.find({ key: 'lim-five_hour-label' }))?.text).toBe('Session')
     expect((await ui.find({ key: 'details' }))?.text).toBe(OPEN_GLYPH)
+    expect((await ui.find({ key: 'cache-time' }))?.text).toBe('Cache —')
 
     await ui.press({ key: 'details' })
     expect((await ui.find({ key: 'details' }))?.text).toBe(CLOSE_GLYPH)

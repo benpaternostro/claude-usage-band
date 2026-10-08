@@ -17,6 +17,6 @@ export type Snapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-band': { snapshot: Snapshot | null; isOpen: boolean }
+    'usage-band': { snapshot: Snapshot | null; isOpen: boolean; cacheExpiresAt: number | null }
   }
 }
