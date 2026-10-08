@@ -33,7 +33,7 @@
 | **Session** | The 5-hour plan limit, with the time until it resets |
 | **Weekly** | The 7-day plan limit, with the time until it resets |
 | **Credits** | The spend limit, when your plan has one |
-| **Cache** | Estimated prompt-cache time remaining, at the far right |
+| **Cache** | Estimated prompt-cache time remaining, to the left of the `＋` toggle |
 
 The cache countdown updates each second after a main-conversation response uses or writes the cache. `~` marks an estimate. The countdown uses your cache TTL settings. Without an explicit setting, it estimates the TTL from the plan limits. `Cache —` means no cache time is available. A model switch or compaction clears the estimate. See [Claude Code cache lifetimes](https://code.claude.com/docs/en/prompt-caching#cache-lifetime).
 

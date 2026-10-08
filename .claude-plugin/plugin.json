@@ -1,6 +1,6 @@
 {
   "name": "usage-band",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shows context window fill and plan usage limits in a band above the prompt.",
   "author": { "name": "benpaternostro", "url": "https://github.com/benpaternostro" },
   "license": "MIT",
