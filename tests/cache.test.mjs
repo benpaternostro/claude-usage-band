@@ -3,13 +3,16 @@ import { test } from 'node:test'
 import { cacheText, cacheTtl } from '../hooks/cache.ts'
 
 test('cache countdown handles unknown, active, and expired entries', () => {
-  assert.equal(cacheText(null, 0), 'Cache —')
-  assert.equal(cacheText(300_000, 0), 'Cache ~5:00')
-  assert.equal(cacheText(300_000, 1000), 'Cache ~4:59')
-  assert.equal(cacheText(300_000, 299_999), 'Cache ~0:01')
-  assert.equal(cacheText(300_000, 300_000), 'Cache expired')
-  assert.equal(cacheText(300_000, 400_000), 'Cache expired')
-  assert.equal(cacheText(3_600_000, 0), 'Cache ~60:00')
+  assert.equal(cacheText(null, 0), '—')
+  assert.equal(cacheText(300_000, 0), '5m')
+  assert.equal(cacheText(300_000, 1000), '5m')
+  assert.equal(cacheText(300_000, 60_000), '4m')
+  assert.equal(cacheText(300_000, 240_000), '1m')
+  assert.equal(cacheText(300_000, 241_000), '59s')
+  assert.equal(cacheText(300_000, 299_999), '1s')
+  assert.equal(cacheText(300_000, 300_000), 'expired')
+  assert.equal(cacheText(300_000, 400_000), 'expired')
+  assert.equal(cacheText(3_600_000, 14_000), '60m')
 })
 
 test('forced five-minute TTL overrides all longer settings', () => {
