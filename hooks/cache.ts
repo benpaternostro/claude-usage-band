@@ -21,9 +21,11 @@ export const cacheTtl = ({ force5m, ttl, setting, enable1h, limits }: CacheOptio
   return plan.length > 0 && plan.every(l => l.percentUsed < 100) ? 3_600_000 : 300_000
 }
 
+// Whole minutes until the last one, then seconds: the label keeps its width
+// rather than changing every second. The band puts a clock or "Cache" before it.
 export const cacheText = (expiresAt: number | null, now: number): string => {
-  if (expiresAt === null) return 'Cache —'
+  if (expiresAt === null) return '—'
   const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000))
-  if (seconds === 0) return 'Cache expired'
-  return `Cache ~${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  if (seconds === 0) return 'expired'
+  return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)}m`
 }

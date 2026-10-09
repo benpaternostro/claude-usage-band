@@ -15,8 +15,11 @@ export type Snapshot = {
   autoCompactAt?: number
 }
 
+/** The session's checkout: its branch (a short sha when detached) and, in a linked worktree, that worktree's folder name. */
+export type GitHead = { branch: string; worktree?: string }
+
 declare module 'claude-code' {
   interface PluginState {
-    'usage-band': { snapshot: Snapshot | null; isOpen: boolean; cacheExpiresAt: number | null }
+    'usage-band': { snapshot: Snapshot | null; isOpen: boolean; cacheExpiresAt: number | null; git: GitHead | null }
   }
 }

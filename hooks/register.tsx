@@ -1,16 +1,19 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionContextUsage, SessionCost, SessionRateLimit } from 'claude-code'
 
-import type { Limit, Segment, Snapshot } from '../types'
+import type { GitHead, Limit, Segment, Snapshot } from '../types'
 import { cacheText, cacheTtl } from './cache'
+import { BAR_CELLS, BAR_PX, CACHE_WORD, DESKTOP, GIT_WORD, ICON_PX, OPEN_GLYPH, TERMINAL, WORKTREE_NOTE, fitBand, roomOf } from './fit'
+import { HEAD_ARGV, branchName, isDetached, parseHead } from './git'
 
 const snapshot = atom({ plugin: 'usage-band', key: 'snapshot' } as const, null)
 const isOpen = atom({ plugin: 'usage-band', key: 'isOpen' } as const, false)
 const cacheExpiresAt = atom({ plugin: 'usage-band', key: 'cacheExpiresAt' } as const, null)
+const git = atom({ plugin: 'usage-band', key: 'git' } as const, null)
 
 // Full-width glyphs: the same size as the app's close control, and the same
 // advance as each other, so the toggle never moves.
-export const OPEN_GLYPH = '＋'
+export { OPEN_GLYPH }
 export const CLOSE_GLYPH = '－'
 
 const SHORT_LABELS: Record<string, string> = { five_hour: 'Session', seven_day: 'Weekly', spend_limit: 'Credits' }
@@ -22,6 +25,8 @@ const LONG_LABELS: Record<string, string> = {
 
 // The app's usage popover: blue fill on a dark track; context categories in theme colours.
 const BLUE = '#4a80e8'
+const AMBER = '#e0a526'
+const RED = '#e5484d'
 const TRACK = '#8888884d'
 const BUFFER = '#8888888c'
 const HOVER_BG = '#8888881f'
@@ -30,19 +35,29 @@ const THEME: Record<string, string> = {
   suggestion: BLUE,
   claude: '#d97757',
   success: '#3fae6a',
-  warning: '#e0a526',
-  error: '#e5484d',
+  warning: AMBER,
+  error: RED,
   inactive: '#b4b4b4',
   promptBorder: '#b4b4b4',
   remember: '#a48fd8',
   purple_FOR_SUBAGENTS_ONLY: '#a48fd8',
   cyan_FOR_SUBAGENTS_ONLY: '#4fb3c4',
 }
-const BY_RANK = [BLUE, '#d97757', '#3fae6a', '#e0a526', '#b4b4b4', '#a48fd8', '#4fb3c4']
-const BAR_PX = 56
-const BAR_CELLS = 8
-// Braille blanks: drawn empty, never trimmed as spaces are.
-const HIT_LABEL = '⠀'.repeat(BAR_CELLS)
+const BY_RANK = [BLUE, '#d97757', '#3fae6a', AMBER, '#b4b4b4', '#a48fd8', '#4fb3c4']
+// Braille blanks: drawn empty, never trimmed as spaces are. About a cell's
+// worth for each cell of bar.
+const hitLabel = (px: number) => '⠀'.repeat(Math.max(1, Math.round((BAR_CELLS * px) / BAR_PX)))
+
+// Desktop icons, 24-unit strokes in a grey that reads on light and dark themes.
+const ICON_GREY = '#8c8c8c'
+const ICONS = {
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 7v10M18 8v1a4 4 0 0 1-4 4h-4a4 4 0 0 0-4 4"/>',
+  worktree: '<circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v1a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4v-1M12 12v5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+}
+const svgIcon = (body: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${ICON_GREY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
+const SVG_DIVIDER = `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="14"><rect width="1" height="14" fill="${ICON_GREY}" fill-opacity="0.45"/></svg>`
 
 type Usage = { context: SessionContextUsage; rateLimits: SessionRateLimit[]; cost?: SessionCost }
 type Part = { color: string; part: number; title?: string; tokens?: number }
@@ -143,12 +158,21 @@ export const contextBar = (s: Snapshot): Bar => {
   return { parts, restTokens: free, rest: `Free space · ${kTokens(free)} (${share(free, s.window)})` }
 }
 
+// A fill turns amber from 80% of the way to its limit, and red from 95%.
+export const fillColor = (used: number, limit = 100) => {
+  const way = limit > 0 ? used / limit : 0
+  return way >= 0.95 ? RED : way >= 0.8 ? AMBER : BLUE
+}
+
+// The context's limit is where it auto-compacts, or the window when it never does.
+export const contextColor = (s: Snapshot) => fillColor(s.tokens ?? 0, s.autoCompactAt ?? s.window)
+
 export const limitBar = (l: Limit, now: number): Bar => {
   const percent = Math.min(100, Math.max(0, l.percentUsed))
   const reset = resetText(l, now)
   const name = LONG_LABELS[l.kind] ?? l.kind
   return {
-    parts: [{ color: BLUE, part: percent / 100, title: `${name} · ${percent}% used${reset ? ` · ${reset}` : ''}` }],
+    parts: [{ color: fillColor(percent), part: percent / 100, title: `${name} · ${percent}% used${reset ? ` · ${reset}` : ''}` }],
     rest: `${100 - percent}% left${reset ? ` · ${reset}` : ''}`,
   }
 }
@@ -168,6 +192,23 @@ const svgBar = (bar: Bar, width: number, height: number, gap: number) => {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">` +
     `<clipPath id="c"><rect width="${width}" height="${height}" rx="${height / 2}"/></clipPath>` +
     `<g clip-path="url(#c)"><rect width="${width}" height="${height}" fill="${TRACK}"/>${rects}</g></svg>`
+  )
+}
+
+// A bar wound into a ring, for a row with no room for bars: the fill as one
+// arc in its colour, clockwise from the top, on the same track.
+const svgRing = (part: number, size: number, color: string) => {
+  const c = size / 2
+  const r = c - 1.25
+  const around = 2 * Math.PI * r
+  const arc = Math.min(1, Math.max(0, part)) * around
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="none" stroke-width="2">` +
+    `<g transform="rotate(-90 ${c} ${c})"><circle cx="${c}" cy="${c}" r="${r}" stroke="${TRACK}"/>` +
+    (arc > 0
+      ? `<circle cx="${c}" cy="${c}" r="${r}" stroke="${color}" stroke-linecap="round" stroke-dasharray="${arc.toFixed(2)} ${around.toFixed(2)}"/>`
+      : '') +
+    `</g></svg>`
   )
 }
 
@@ -197,6 +238,21 @@ async function refresh($: EngineInterface) {
   await update($, snapshot, () => toSnapshot(usage, prev))
 }
 
+// Outside a repository, or with no commit yet, the band shows no branch.
+async function refreshGit($: EngineInterface) {
+  let head: GitHead | null = null
+  try {
+    const ran = await $.process.run(HEAD_ARGV, { timeoutMs: 5000 })
+    if (ran.exitCode === 0) {
+      const sha = isDetached(ran.stdout) ? (await $.process.run(['git', 'rev-parse', '--short', 'HEAD'], { timeoutMs: 5000 })).stdout : ''
+      head = parseHead(ran.stdout, sha)
+    }
+  } catch {
+    // No git on the host: no branch.
+  }
+  await update($, git, () => head)
+}
+
 async function toggle($: EngineInterface) {
   await update($, isOpen, open => !open)
 }
@@ -208,7 +264,7 @@ export const register: Register = on => {
     const result = await next(e)
     await update($, isOpen, () => false)
     await update($, cacheExpiresAt, () => null)
-    await refresh($)
+    await Promise.all([refresh($), refreshGit($)])
     ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
     return result
   })
@@ -237,6 +293,14 @@ export const register: Register = on => {
     ])
     const duration = cacheTtl({ force5m, ttl, enable1h, setting: settings.promptCacheTtl, limits: limitsOf(session) })
     await update($, cacheExpiresAt, () => now + duration)
+    return result
+  })
+
+  // A turn may switch the branch or move into a worktree; so may the person,
+  // outside the session, between turns.
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agentId) await refreshGit($)
     return result
   })
 
@@ -274,9 +338,11 @@ export const register: Register = on => {
     const open = await read($, isOpen)
     ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
     const cacheLabel = cacheText(await read($, cacheExpiresAt), now)
+    const head = await read($, git)
 
     // A wide bar spans `width` cells on the terminal: the drawer's inner width
-    // unless it sits in a narrower column.
+    // unless it sits in a narrower column. A narrow one is `width` cells, or px
+    // on the desktop.
     const bar = (id: string, bar: Bar, label: string, isWide: boolean, width = e.props.bodyColumns - 2) => {
       if (e.surface === 'desktop') {
         const { Svg } = $.ui.resolve(e)
@@ -287,10 +353,10 @@ export const register: Register = on => {
             <Svg key={`${id}-svg`} source={svgBar(bar, 1000, 4, 4)} alt={label} height={4} />
           </Box>
         ) : (
-          <Svg key={id} source={svgBar(bar, BAR_PX, 4, 1)} alt={label} width={BAR_PX} height={4} />
+          <Svg key={id} source={svgBar(bar, width, 4, 1)} alt={label} width={width} height={4} />
         )
       }
-      const { cells, free } = textCells(bar.parts, isWide ? Math.max(10, width) : BAR_CELLS)
+      const { cells, free } = textCells(bar.parts, isWide ? Math.max(10, width) : width)
       return (
         <Box key={id}>
           {cells.map((c, i) => (
@@ -427,43 +493,111 @@ export const register: Register = on => {
       )
     }
 
-    const meter = (id: string, label: string, b: Bar, percent: number | undefined, note: string) => (
+    // A desktop cell is about 8px wide: the band's inner gaps take half of one
+    // there. Terminal gaps are whole cells.
+    const isDesktop = e.surface === 'desktop'
+    const half = isDesktop ? 0.5 : 1
+    const percentText = (percent: number | undefined) => (percent === undefined ? '—' : `${percent}%`)
+
+    const meters = [
+      // One fill, as the limits have: at this size the context's grey
+      // categories vanish into the track. The drawer breaks it down.
+      { id: 'ctx', label: 'Context', b: { parts: [{ color: contextColor(s), part: Math.min(1, (s.percent ?? 0) / 100) }] }, percent: s.percent, note: '' },
+      ...s.limits.map(l => ({
+        id: `lim-${l.kind}`,
+        label: SHORT_LABELS[l.kind] ?? l.kind,
+        b: limitBar(l, now),
+        percent: l.percentUsed,
+        note: resetIn(l, now),
+      })),
+    ]
+    // The bars narrow, then turn to rings on the desktop, then the branch
+    // shortens, before anything is dropped.
+    const model = isDesktop ? DESKTOP : TERMINAL
+    const fit = fitBand(
+      {
+        meters: meters.map(m => ({ label: m.label, percent: percentText(m.percent), note: m.note })),
+        branch: head ? branchName(head) : undefined,
+        worktree: head?.worktree !== undefined,
+        cache: cacheLabel,
+      },
+      roomOf(model, e.props.bodyColumns),
+      model,
+    )
+
+    const svg = (id: string, source: string, alt: string, width: number, height: number) => {
+      if (e.surface !== 'desktop') return null
+      const { Svg } = $.ui.resolve(e)
+      return <Svg key={id} source={source} alt={alt} width={width} height={height} />
+    }
+    const icon = (id: string, body: string, alt: string) => svg(id, svgIcon(body), alt, ICON_PX, ICON_PX)
+
+    const meter = ({ id, label, b, percent, note }: (typeof meters)[number]) => (
       <Box
         key={id}
         flexDirection="row"
         alignItems="center"
-        columnGap={1}
-        paddingX={1}
+        columnGap={half}
+        paddingX={half}
         flexShrink={0}
         hover={{ backgroundColor: HOVER_BG }}
       >
         {/* Only Buttons take a press, so each word of the meter is one: a click
             anywhere on its text opens the drawer. */}
         <Button key={`${id}-label`} plain dimColor label={label} onPress={() => toggle($)} />
-        {/* A bar takes no press, so on the desktop a blank plain Button lies
-            over it. On a text surface that Button would paint over the bar's
+        {/* A bar or ring takes no press, so on the desktop a blank plain Button
+            lies over it. On a text surface that Button would paint over the bar's
             cells, so there the label and figures take the press alone. */}
-        <Box flexDirection="row" alignItems="center">
-          {bar(`${id}-bar`, b, `${label} ${percent ?? 0}%`, false)}
-          {e.surface === 'desktop' && (
-            <Box position="absolute" top={0} left={0}>
-              <Button key={`${id}-hit`} plain label={HIT_LABEL} hover={{ inverse: false }} onPress={() => toggle($)} />
-            </Box>
-          )}
+        {/* A ring sits closer to its figure than to its label, so the two read
+            as one. */}
+        <Box key={`${id}-fill`} flexDirection="row" alignItems="center" columnGap={fit.isRing ? 0 : half}>
+          <Box flexDirection="row" alignItems="center">
+            {fit.isRing
+              ? svg(`${id}-bar`, svgRing((percent ?? 0) / 100, fit.bar, b.parts[0]?.color ?? BLUE), `${label} ${percent ?? 0}%`, fit.bar, fit.bar)
+              : bar(`${id}-bar`, b, `${label} ${percent ?? 0}%`, false, fit.bar)}
+            {isDesktop && (
+              <Box position="absolute" top={0} left={0}>
+                <Button key={`${id}-hit`} plain label={hitLabel(fit.bar)} hover={{ inverse: false }} onPress={() => toggle($)} />
+              </Box>
+            )}
+          </Box>
+          <Button key={`${id}-pct`} plain label={percentText(percent)} onPress={() => toggle($)} />
         </Box>
-        <Button key={`${id}-pct`} plain label={percent === undefined ? '—' : `${percent}%`} onPress={() => toggle($)} />
         {note !== '' && <Button key={`${id}-note`} plain dimColor label={note} onPress={() => toggle($)} />}
       </Box>
     )
 
     return (
-      <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
-        <Box key="meters" flexDirection="row" alignItems="center" columnGap={1} flexShrink={1} overflow="hidden">
-          {meter('ctx', 'Context', ctx, s.percent, '')}
-          {s.limits.map(l => meter(`lim-${l.kind}`, SHORT_LABELS[l.kind] ?? l.kind, limitBar(l, now), l.percentUsed, resetIn(l, now)))}
+      <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2 * half}>
+        {/* One row that wraps onto a hidden second one: whatever the fit
+            misjudges leaves whole, from the right, rather than overlapping or
+            being cut mid-word. The branch sits last and grows to push itself
+            right, so it is the first to go, with the divider that parts it
+            from the cache. On the desktop the meters' own padding spaces them. */}
+        <Box key="meters" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={model.gap} height={1} flexGrow={1} flexShrink={1} overflow="hidden">
+          {meters.map(meter)}
+          {head && fit.branch !== undefined && (
+            <Box key="git" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={half} paddingLeft={isDesktop ? 0 : 1} flexGrow={1} flexShrink={0}>
+              {isDesktop && icon('git-icon', head.worktree === undefined ? ICONS.branch : ICONS.worktree, head.worktree === undefined ? 'Branch' : 'Worktree branch')}
+              {/* The terminal has no icons: a label stands in, as "Cache" does. */}
+              {!isDesktop && <Text dimColor>{GIT_WORD}</Text>}
+              <Text>{fit.branch}</Text>
+              {!isDesktop && head.worktree !== undefined && <Text dimColor>{WORKTREE_NOTE}</Text>}
+              <Box key="git-divider" marginLeft={half} flexDirection="row" alignItems="center">
+                {/* With an empty alt the desktop drew nothing here. */}
+                {isDesktop ? svg('divider', SVG_DIVIDER, 'Separator', 1, 14) : <Text dimColor>│</Text>}
+              </Box>
+            </Box>
+          )}
         </Box>
-        <Box key="band-right" flexDirection="row" alignItems="center" columnGap={2} flexShrink={0}>
-          <Button key="cache-time" plain dimColor label={cacheLabel} onPress={() => toggle($)} />
+        <Box key="band-right" flexDirection="row" alignItems="center" columnGap={2 * half} flexShrink={0}>
+          {/* The time's Button pads it enough from the clock, so they sit as
+              close as the branch and its icon; the terminal's word keeps a cell. */}
+          <Box key="cache" flexDirection="row" alignItems="center" columnGap={isDesktop ? 0 : half}>
+            {/* An icon or a dim word, then the value bright, as the branch is. */}
+            {isDesktop ? icon('cache-icon', ICONS.clock, 'Prompt cache') : <Button key="cache-label" plain dimColor label={CACHE_WORD} onPress={() => toggle($)} />}
+            <Button key="cache-time" plain label={cacheLabel} onPress={() => toggle($)} />
+          </Box>
           {toggleButton}
         </Box>
       </Box>

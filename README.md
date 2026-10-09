@@ -15,7 +15,7 @@
 
 <br>
 
-<img src="docs/band.png" alt="The usage band above the prompt in the desktop Code tab">
+<img src="docs/band.png" alt="The usage band above the prompt in the desktop Code tab: the Context, Session and Weekly meters drawn as rings, the branch, and the cache countdown">
 
 <sub>Desktop Code tab</sub>
 
@@ -29,13 +29,18 @@
 
 | Meter | Shows |
 | --- | --- |
-| **Context** | How full the context window is, coloured by category as `/context` shows it |
-| **Session** | The 5-hour plan limit, with the time until it resets |
-| **Weekly** | The 7-day plan limit, with the time until it resets |
+| **Context** | How full the context window is. The drawer breaks it down by category, coloured as `/context` shows it |
+| **Session** | The 5-hour plan limit and the time until it resets |
+| **Weekly** | The 7-day plan limit and the time until it resets |
 | **Credits** | The spend limit, when your plan has one |
-| **Cache** | Estimated prompt-cache time remaining, to the left of the `＋` toggle |
+| **Branch** | The session's git branch (a short commit hash when detached). The desktop shows a branch icon (a fork icon in a linked worktree); the terminal shows `git main`, and `· worktree` in a linked worktree |
+| **Cache** | Estimated prompt-cache time remaining, after a clock icon on the desktop (`Cache` in the terminal), to the left of the `＋` toggle |
 
-The cache countdown updates each second after a main-conversation response uses or writes the cache. `~` marks an estimate. The countdown uses your cache TTL settings. Without an explicit setting, it estimates the TTL from the plan limits. `Cache —` means no cache time is available. A model switch or compaction clears the estimate. See [Claude Code cache lifetimes](https://code.claude.com/docs/en/prompt-caching#cache-lifetime).
+A meter's fill turns amber at 80% of its limit and red at 95%. For the context, the limit is the auto-compact point, or the full window when auto-compact is off.
+
+The cache countdown starts after a main-conversation response uses or writes the cache. It counts whole minutes (`59m`), then seconds in the last minute. The countdown uses your cache TTL settings. Without an explicit setting, it estimates the TTL from the plan limits. `—` means no cache time is available. A model switch or compaction clears the estimate. See [Claude Code cache lifetimes](https://code.claude.com/docs/en/prompt-caching#cache-lifetime).
+
+When the band is too narrow, the bars shrink first. On the desktop, bars that would be too short to read turn into small rings. Then the branch is shortened with `…`, and then it is dropped. If the band is still too narrow, meters drop whole from the right, so items never overlap. The branch refreshes when the session starts and after each turn.
 
 Click a meter or the `＋` toggle to open the **drawer**. It shows the full context breakdown, the space left before auto-compact, the session cost, and a **Compact session** button.
 
@@ -145,9 +150,14 @@ When you load the mod from a folder, it reloads in a running terminal session af
 | Path | Contents |
 | --- | --- |
 | `hooks/register.tsx` | The hooks: usage refresh, band and drawer rendering |
+| `hooks/cache.ts` | Cache TTL estimate and countdown text |
+| `hooks/git.ts` | Branch and worktree detection |
+| `hooks/fit.ts` | Band width budget: bar widths, rings and branch shortening |
 | `.claude-plugin/marketplace.json` | The marketplace entry for `/plugin install` |
 | `types/index.d.ts` | Snapshot types and plugin state declarations |
-| `tests/band.test.ts` | Helper and render tests |
+| `tests/band.test.ts` | Helper, git and render tests |
+| `tests/cache.test.mjs` | Cache countdown tests (`node --test`) |
+| `tests/fit.test.mjs` | Width budget tests (`node --test`) |
 
 ## License
 
