@@ -33,7 +33,7 @@
 | **Session** | The 5-hour plan limit and the time until it resets |
 | **Weekly** | The 7-day plan limit and the time until it resets |
 | **Credits** | The spend limit, when your plan has one |
-| **Branch** | The session's git branch (a short commit hash when detached). The desktop shows a branch icon (a fork icon in a linked worktree); the terminal shows `git main`, and `· worktree` in a linked worktree |
+| **Branch** | The session's git branch (a short commit hash when detached), shown from its last `/`: `feature/NEXT-1777` shows as `NEXT-1777`. Hover it for the full name. The desktop shows a branch icon (a fork icon in a linked worktree); the terminal shows `git main`, and `· worktree` in a linked worktree |
 | **Cache** | Estimated prompt-cache time remaining, after a clock icon on the desktop (`Cache` in the terminal), to the left of the `＋` toggle |
 
 A meter's fill turns amber at 80% of its limit and red at 95%. For the context, the limit is the auto-compact point, or the full window when auto-compact is off.

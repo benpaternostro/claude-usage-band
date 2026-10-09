@@ -92,8 +92,11 @@ test('git head names the branch, a detached sha, and a linked worktree', async (
   const linked = ['C:/r/.git/worktrees/fix', 'C:/r/.git', 'C:/r/.claude/worktrees/fix', 'fix-band', ''].join('\r\n')
   expect(parseHead(linked)).toEqual({ branch: 'fix-band', worktree: 'fix' })
   expect(parseHead('')).toBe(null)
+  // The name after its last slash.
   expect(branchName({ branch: 'main' })).toBe('main')
-  expect(branchName({ branch: 'feature/a-very-long-branch-name' }, 24)).toBe('feature/a-very-long-bra…')
+  expect(branchName({ branch: 'feature/NEXT-1777' })).toBe('NEXT-1777')
+  expect(branchName({ branch: 'claude/new-session-35d9df', worktree: 'new-session-35d9df' })).toBe('new-session-35d9df')
+  expect(branchName({ branch: 'feature/a-very-long-branch-name' }, 16)).toBe('a-very-long-bra…')
 })
 
 test('band shows the /context fill and opens the drawer in place of the band', async ($, on) => {
@@ -169,7 +172,7 @@ test('band shows the /context fill and opens the drawer in place of the band', a
   }
 })
 
-test('a long branch narrows the bars or turns them to rings, then is shortened, then goes', async ($, on) => {
+test('a long branch shows its last part, narrows the bars or turns them to rings, then is shortened, then goes', async ($, on) => {
   mock.clock(on)
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('session.usage', () => ({ value: { startedAt: 0, ...RAW, context: { ...RAW.context, breakdown: BREAKDOWN } } }))
@@ -190,10 +193,12 @@ test('a long branch narrows the bars or turns them to rings, then is shortened, 
   const mount = (surface: 'terminal' | 'desktop', bodyColumns: number) =>
     $.ui.mount({ plugin: 'usage-band', surface, ...BAND, props: { ...BAND.props, bodyColumns } })
 
-  // Stub bars, and the name cut to the cells the row has left.
-  let ui = await mount('terminal', 110)
+  // Stub bars, and the name cut to the cells the row has left. The whole
+  // name waits, hidden, for the pointer.
+  let ui = await mount('terminal', 102)
   expect((await ui.find({ key: 'ctx-bar' }))?.text?.length).toBe(3)
-  expect(await ui.find({ type: 'Text', text: 'feature/usage-band-shrink-ba…' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'usage-band-shrink-ba…' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'feature/usage-band-shrink-bars' })).toBeDefined()
   await ui.unmount()
 
   // Too narrow to keep eight characters: the branch goes and the bars widen again.
@@ -205,13 +210,19 @@ test('a long branch narrows the bars or turns them to rings, then is shortened, 
   // The desktop's bars would be too narrow to read, so rings take their place
   // and the name stays whole. The kit keeps no Svg keys, but the meters' are
   // the first three Svgs.
-  ui = await mount('desktop', 120)
-  const rings = (await ui.findAll({ type: 'Svg' })).slice(0, 3)
+  ui = await mount('desktop', 88)
+  const svgs = await ui.findAll({ type: 'Svg' })
+  const rings = svgs.slice(0, 3)
   expect(rings.map(svg => svg.props.width)).toEqual([14, 14, 14])
   // Each one blue arc, the context's included.
   expect(rings.every(svg => String(svg.props.source).includes('<circle'))).toBe(true)
   expect(rings.every(svg => String(svg.props.source).match(/stroke="#4a80e8"/g)?.length === 1)).toBe(true)
-  expect(await ui.find({ type: 'Text', text: 'feature/usage-band-shrink-bars' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'usage-band-shrink-bars' })).toBeDefined()
+  // The whole name waits, hidden, for the pointer, on a ground of its own:
+  // no frame, which would paint white.
+  const full = await ui.find({ type: 'Text', text: 'feature/usage-band-shrink-bars' })
+  expect(full?.props.color).toBe('#f2f2f2')
+  expect(svgs.some(svg => svg.props.isInteractive)).toBe(false)
   await ui.unmount()
 })
 

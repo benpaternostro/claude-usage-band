@@ -27,5 +27,7 @@ export const parseHead = (stdout: string, sha = ''): GitHead | null => {
   return norm(gitDir) === norm(commonDir) ? { branch } : { branch, worktree: norm(top).split('/').pop() ?? top }
 }
 
-// The band shortens it further when the row is full.
-export const branchName = (head: GitHead, max = 48) => clip(head.branch, max)
+// The name after its last slash: "feature/NEXT-1777" is "NEXT-1777", and a
+// worktree's "claude/fix-band" is "fix-band". The band shortens it further
+// when the row is full, and shows the whole on hover.
+export const branchName = (head: GitHead, max = 48) => clip(head.branch.split('/').pop() || head.branch, max)

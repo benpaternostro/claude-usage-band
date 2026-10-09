@@ -30,6 +30,11 @@ const RED = '#e5484d'
 const TRACK = '#8888884d'
 const BUFFER = '#8888888c'
 const HOVER_BG = '#8888881f'
+// The whole branch name over the short one, on the desktop: the band's dark
+// grey as a meter under the pointer lights it, opaque so the name hides what
+// it covers.
+const TIP_BG = '#2e2e2e'
+const TIP_TEXT = '#f2f2f2'
 const THEME: Record<string, string> = {
   permission: BLUE,
   suggestion: BLUE,
@@ -578,10 +583,31 @@ export const register: Register = on => {
           {meters.map(meter)}
           {head && fit.branch !== undefined && (
             <Box key="git" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={half} paddingLeft={isDesktop ? 0 : 1} flexGrow={1} flexShrink={0}>
-              {isDesktop && icon('git-icon', head.worktree === undefined ? ICONS.branch : ICONS.worktree, head.worktree === undefined ? 'Branch' : 'Worktree branch')}
-              {/* The terminal has no icons: a label stands in, as "Cache" does. */}
-              {!isDesktop && <Text dimColor>{GIT_WORD}</Text>}
-              <Text>{fit.branch}</Text>
+              <Box key="git-name" flexDirection="row" alignItems="center" columnGap={half}>
+                {isDesktop && icon('git-icon', head.worktree === undefined ? ICONS.branch : ICONS.worktree, head.worktree === undefined ? 'Branch' : 'Worktree branch')}
+                {/* The terminal has no icons: a label stands in, as "Cache" does. */}
+                {!isDesktop && <Text dimColor>{GIT_WORD}</Text>}
+                <Text>{fit.branch}</Text>
+                {/* A name shown short is whole under the pointer, drawn over the
+                    row and ending where the short one does. Unkeyed, so the
+                    pointer on the name reveals it. An interactive Svg's
+                    tooltip would sit in a frame that paints white each redraw.
+                    Terminal cells cover what is under them; the desktop needs
+                    a ground. */}
+                {fit.branch !== head.branch && (
+                  <Box
+                    position="absolute"
+                    top={0}
+                    right={0}
+                    display="none"
+                    hover={{ display: 'flex' }}
+                    backgroundColor={isDesktop ? TIP_BG : undefined}
+                    paddingX={isDesktop ? half : 0}
+                  >
+                    <Text color={isDesktop ? TIP_TEXT : undefined}>{head.branch}</Text>
+                  </Box>
+                )}
+              </Box>
               {!isDesktop && head.worktree !== undefined && <Text dimColor>{WORKTREE_NOTE}</Text>}
               <Box key="git-divider" marginLeft={half} flexDirection="row" alignItems="center">
                 {/* With an empty alt the desktop drew nothing here. */}
