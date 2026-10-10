@@ -72,7 +72,7 @@ A status line is one line of text below the prompt. The band sits above the prom
 
 - **You can click it.** A meter opens the drawer with the full context breakdown, the session cost and a **Compact session** button.
 - **It draws real UI on the desktop.** In the desktop Code tab, the meters are bars and rings in the app's own colours.
-- **It makes no requests of its own.** The figures come from Claude Code through the plugin API. There is nothing else to install.
+- **It makes no network requests of its own.** The usage figures come from Claude Code through the plugin API. There is nothing else to install.
 - **It leaves your status line alone.** The mod does not use the `statusLine` setting, so a status line you already have keeps working.
 
 ## Where it works
