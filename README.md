@@ -25,6 +25,16 @@
 
 </div>
 
+## Quick start
+
+In a Claude Code session, run:
+
+```
+/plugin install usage-band --marketplace benpaternostro/claude-usage-band
+```
+
+Confirm the marketplace source, choose an installation scope, and start a new session.
+
 ## Features
 
 | Meter | Shows |
@@ -56,15 +66,14 @@ The context breakdown is a local estimate. It sends no API request.
 
 </details>
 
-## Quick start
+## Why a band and not a status line
 
-In a Claude Code session, run:
+A status line is one line of text below the prompt. The band sits above the prompt and is built from plugin UI, so it can do more:
 
-```
-/plugin install usage-band --marketplace benpaternostro/claude-usage-band
-```
-
-Confirm the marketplace source, choose an installation scope, and start a new session.
+- **You can click it.** A meter opens the drawer with the full context breakdown, the session cost and a **Compact session** button.
+- **It draws real UI on the desktop.** In the desktop Code tab, the meters are bars and rings in the app's own colours.
+- **It makes no network requests of its own.** The usage figures come from Claude Code through the plugin API. There is nothing else to install.
+- **It leaves your status line alone.** The mod does not use the `statusLine` setting, so a status line you already have keeps working.
 
 ## Where it works
 
