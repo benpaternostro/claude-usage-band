@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The release workflows run the same checks before they release.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_AUTOUPDATER: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code
+      - name: Unit tests
+        run: node --test tests/*.mjs
+      - name: Validate the plugin
+        run: claude plugin validate .
+      - name: Plugin tests
+        run: claude plugin test .

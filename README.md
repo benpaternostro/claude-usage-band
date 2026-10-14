@@ -5,6 +5,7 @@
 **Context window and plan limits, always in view, in a band above the Claude Code prompt.**
 
 [![Release](https://img.shields.io/github/v/release/benpaternostro/claude-usage-band?label=release&color=d97757)](https://github.com/benpaternostro/claude-usage-band/releases/latest)
+[![CI](https://github.com/benpaternostro/claude-usage-band/actions/workflows/ci.yml/badge.svg)](https://github.com/benpaternostro/claude-usage-band/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/benpaternostro/claude-usage-band?color=blue)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.275%2B-d97757)](https://docs.anthropic.com/en/docs/claude-code)
 [![Plugin](https://img.shields.io/badge/type-function--hook%20mod-8a63d2)](#install)
@@ -160,6 +161,16 @@ claude plugin test .
 
 When you load the mod from a folder, it reloads in a running terminal session after you save `hooks/register.tsx`. In the desktop app, set `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` in the same `env` block to get this behaviour, or start a new session.
 
+The **CI** workflow runs the unit tests, `claude plugin validate .` and `claude plugin test .` on every pull request and on `main`.
+
+### Release
+
+1. In the Actions tab, run **Release PR** and pick a patch, minor or major bump. It runs the tests, bumps the version in `.claude-plugin/plugin.json`, and opens a release PR with drafted release notes as its description.
+2. Edit the release notes in the PR description if needed, then merge the PR.
+3. The **Release** workflow runs when the new version reaches `main`. It tags `usage-band--v<version>` and publishes the GitHub release with the PR description as its notes.
+
+Installed copies update when the version changes. A version bump merged by hand is released too, with GitHub's generated notes.
+
 ### Layout
 
 | Path | Contents |
@@ -173,6 +184,7 @@ When you load the mod from a folder, it reloads in a running terminal session af
 | `tests/band.test.ts` | Helper, git and render tests |
 | `tests/cache.test.mjs` | Cache countdown tests (`node --test`) |
 | `tests/fit.test.mjs` | Width budget tests (`node --test`) |
+| `.github/workflows/` | CI, the release PR, and the tag and GitHub release |
 
 ## License
 
