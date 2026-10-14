@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DESKTOP, TERMINAL, fitBand, roomOf } from '../hooks/fit.ts'
+import { DESKTOP, TERMINAL, VSCODE, fitBand, roomOf } from '../hooks/fit.ts'
 
 // The terminal fixes 63 cells: Context 44% (14), Session 36% 2h 14m (21),
 // Weekly 19% (13), the two gaps between them, and "Cache —  ＋" (13).
@@ -53,17 +53,18 @@ test('a branch that cannot keep eight characters goes, and the bars take back it
   assert.deepEqual(fitBand({ ...BAND, branch: LONG }, 88, TERMINAL), { bar: 8 })
   assert.deepEqual(fitBand({ ...BAND, branch: LONG }, 80, TERMINAL), { bar: 5 })
   assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, 84, TERMINAL), { bar: 7 })
-  assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, 50, TERMINAL), { bar: 3 })
+  assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, 72, TERMINAL), { bar: 3 })
 })
 
 test('what the fit keeps always fits, on either surface', () => {
   for (const [model, rooms] of [
     [TERMINAL, Array.from({ length: 120 }, (_, i) => 60 + i)],
     [DESKTOP, Array.from({ length: 60 }, (_, i) => roomOf(DESKTOP, 40 + i * 2))],
+    [VSCODE, Array.from({ length: 80 }, (_, i) => roomOf(VSCODE, 60 + i * 2))],
   ]) {
     for (const branch of ['main', LONG, `${LONG}-and-then-some-more`]) {
       for (const worktree of [false, true]) {
-        let last = { bar: 0, chars: 0 }
+        let last = { bar: 0, chars: 0, meters: 0 }
         for (const room of rooms) {
           const t = { ...BAND, branch, worktree }
           const fit = fitBand(t, room, model)
@@ -73,13 +74,37 @@ test('what the fit keeps always fits, on either surface', () => {
           if (width(least, model, t) <= room) {
             assert.ok(width(fit, model, t) <= room, `${branch} at ${room}`)
           }
-          // A wider row never shortens the branch or the bars it kept.
+          // A wider row never drops a meter, nor shortens the branch or the
+          // bars it kept.
           const chars = fit.branch === undefined ? 0 : [...fit.branch].length
+          const meters = fit.meters ?? t.meters.length
+          assert.ok(meters >= last.meters)
           if (chars > 0 && last.chars > 0) assert.ok(chars >= last.chars)
-          if (chars === last.chars) assert.ok(fit.bar >= last.bar)
-          last = { bar: fit.bar, chars }
+          if (chars === last.chars && meters === last.meters) assert.ok(fit.bar >= last.bar)
+          last = { bar: fit.bar, chars, meters }
         }
       }
+    }
+  }
+})
+
+test('when even the narrowest meters overflow, they go whole from the right, the first kept', () => {
+  const ring = { bar: VSCODE.ring.size, isRing: true }
+  assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, roomOf(VSCODE, 50), VSCODE), ring)
+  // Two meters may have room for bars again.
+  assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, roomOf(VSCODE, 45), VSCODE), { bar: 45, meters: 2 })
+  assert.deepEqual(fitBand({ ...BAND, branch: 'main' }, roomOf(VSCODE, 30), VSCODE), { bar: 48, meters: 1 })
+  assert.deepEqual(fitBand(BAND, 10, VSCODE), { ...ring, meters: 1 })
+  assert.deepEqual(fitBand(BAND, 55, TERMINAL), { bar: 3, meters: 2 })
+  // What is kept fits, down to the one meter that always stays.
+  for (const [model, rooms] of [
+    [TERMINAL, Array.from({ length: 40 }, (_, i) => 30 + i)],
+    [VSCODE, Array.from({ length: 40 }, (_, i) => roomOf(VSCODE, 25 + i))],
+  ]) {
+    for (const room of rooms) {
+      const fit = fitBand({ ...BAND, branch: 'main' }, room, model)
+      const kept = { ...BAND, meters: BAND.meters.slice(0, fit.meters ?? BAND.meters.length) }
+      if (kept.meters.length > 1) assert.ok(width(fit, model, kept) <= room, `${room}`)
     }
   }
 })

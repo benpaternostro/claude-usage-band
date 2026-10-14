@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/github/license/benpaternostro/claude-usage-band?color=blue)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-2.1.275%2B-d97757)](https://docs.anthropic.com/en/docs/claude-code)
 [![Plugin](https://img.shields.io/badge/type-function--hook%20mod-8a63d2)](#install)
-[![Surfaces](https://img.shields.io/badge/surfaces-terminal%20%7C%20desktop-2ea44f)](#where-it-works)
+[![Surfaces](https://img.shields.io/badge/surfaces-terminal%20%7C%20desktop%20%7C%20VS%20Code-2ea44f)](#where-it-works)
 [![Last commit](https://img.shields.io/github/last-commit/benpaternostro/claude-usage-band)](https://github.com/benpaternostro/claude-usage-band/commits/main)
 
 <sub>Unofficial. This project is not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic.</sub>
@@ -22,6 +22,10 @@
 <img src="docs/cli-band.webp" alt="The usage band above the prompt in the terminal">
 
 <sub>Terminal</sub>
+
+<img src="docs/vscode-band.png" alt="The usage band above the prompt in the VS Code extension: the meters drawn as rings, the shortened branch, and the cache countdown">
+
+<sub>VS Code extension</sub>
 
 </div>
 
@@ -50,7 +54,7 @@ A meter's fill turns amber at 80% of its limit and red at 95%. For the context, 
 
 The cache countdown starts after a main-conversation response uses or writes the cache. It counts whole minutes (`59m`), then seconds in the last minute. The countdown uses your cache TTL settings. Without an explicit setting, it estimates the TTL from the plan limits. `—` means no cache time is available. A model switch or compaction clears the estimate. See [Claude Code cache lifetimes](https://code.claude.com/docs/en/prompt-caching#cache-lifetime).
 
-When the band is too narrow, the bars shrink first. On the desktop, bars that would be too short to read turn into small rings. Then the branch is shortened with `…`, and then it is dropped. If the band is still too narrow, meters drop whole from the right, so items never overlap. The branch refreshes when the session starts and after each turn.
+When the band is too narrow, the bars shrink first. On the desktop, bars that would be too short to read turn into small rings. Then the branch is shortened with `…`, and then it is dropped. If the band is still too narrow, meters drop whole from the right, so items never overlap or wrap. The branch refreshes when the session starts and after each turn.
 
 Click a meter or the `＋` toggle to open the **drawer**. It shows the full context breakdown, the space left before auto-compact, the session cost, and a **Compact session** button.
 
@@ -63,6 +67,8 @@ The context breakdown is a local estimate. It sends no API request.
 ![The open drawer in the desktop Code tab](docs/drawer.png)
 
 ![The open drawer in the terminal](docs/cli-drawer.webp)
+
+![The open drawer in the VS Code extension](docs/vscode-drawer.png)
 
 </details>
 
@@ -81,12 +87,12 @@ A status line is one line of text below the prompt. The band sits above the prom
 | --- | --- |
 | Terminal, including the VS Code integrated terminal | ✅ Supported. The bars are drawn as text. Click a meter's label or figures, or `＋`, to open the drawer. |
 | Desktop app, Code tab | ✅ Supported |
-| VS Code extension | ❌ Not supported. The extension loads the mod and runs its hooks, but it draws no plugin UI: neither the band nor a status line. Tested on extension 2.1.291. |
+| VS Code extension | ✅ Supported. The band draws as on the desktop, with bars, rings and icons. VS Code draws every plugin button with a frame, so the meters are plain text there: click `＋` to open the drawer. Hover a shortened branch for its full name. The drawer lays the context breakdown out in as many columns as fit. VS Code captions the band "From the usage-band plugin"; the mod cannot hide it. |
 
 ## Requirements
 
 - Claude Code 2.1.275 or later. The mod was tested on 2.1.288.
-- The terminal or the desktop Code tab.
+- The terminal, the desktop Code tab, or the VS Code extension.
 
 > [!WARNING]
 > The function-hook plugin API is in early access. It can change between Claude Code releases without notice.

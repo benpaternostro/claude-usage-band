@@ -1,14 +1,15 @@
 // The band's width budget. The meters' words, the cache and the toggle keep
 // their size; the bars give way first, down to a stub or on the desktop to a
-// ring, then the branch is cut short, then it goes. The band's wrapping row
-// still drops whatever this misjudges, whole and from the right, so nothing
-// ever overlaps.
+// ring, then the branch is cut short, then it goes, then meters go whole from
+// the right. The band's wrapping row still drops whatever this misjudges on
+// the terminal and the desktop, so nothing ever overlaps there.
 
 export type Meter = { label: string; percent: string; note: string }
 export type BandText = { meters: Meter[]; branch?: string; worktree: boolean; cache: string }
 // The bars' width (cells on the terminal, px on the desktop), whether rings
-// stand in for them, and the branch as drawn: absent when it does not fit.
-export type Fit = { bar: number; isRing?: boolean; branch?: string }
+// stand in for them, the branch as drawn: absent when it does not fit, and
+// how many meters are drawn, from the left: absent when all of them are.
+export type Fit = { bar: number; isRing?: boolean; branch?: string; meters?: number }
 
 export type Model = {
   bar: { min: number; max: number }
@@ -101,14 +102,55 @@ export const DESKTOP: Model = {
   right: cache => 2 * HALF + ICON_PX + button(cache) + 2 * HALF + button(OPEN_GLYPH),
 }
 
-// What the band may fill: the terminal's columns, or on the desktop the pane's
-// width less a margin, within the column's own.
+// VS Code draws every Button as a native button, plain or not, so the band's
+// words there are Text and the toggle is the one button. Its layout cell is
+// about 7.2px of the desktop's text measure, and Text carries no padding of
+// its own, so whole cells part the words, as the desktop's buttons do; a ring
+// sits half a cell from its figure.
+export const VSCODE_CELL_PX = 7.2
+const VSCODE_HALF = VSCODE_CELL_PX / 2
+const VSCODE_PAD = 9
+// The panel lays out about this many cells for each one bodyColumns counts,
+// measured off VS Code's own drawing.
+const VSCODE_COLUMN_CELLS = 1.3
+
+export const VSCODE: Model = {
+  bar: DESKTOP.bar,
+  ring: { size: RING_PX, closer: VSCODE_HALF },
+  text: px,
+  gap: VSCODE_CELL_PX,
+  meter: m => 2 * VSCODE_HALF + px(m.label) + 2 * VSCODE_CELL_PX + px(m.percent) + (m.note ? VSCODE_CELL_PX + px(m.note) : 0),
+  git: branch => ICON_PX + VSCODE_HALF + px(branch) + 2 * VSCODE_HALF + 1,
+  right: cache => 2 * VSCODE_HALF + ICON_PX + VSCODE_HALF + px(cache) + 2 * VSCODE_HALF + px(OPEN_GLYPH) + 2 * VSCODE_PAD,
+}
+
+// What the band may fill: the terminal's columns; on the desktop the pane's
+// width less a margin, within the column's own; in VS Code the panel's width,
+// less a cell each side for the frame it draws the band in.
 export const roomOf = (model: Model, bodyColumns: number) =>
-  model === DESKTOP ? Math.min(BAND_PX, (bodyColumns - 2) * CELL_PX) : bodyColumns
+  model === DESKTOP
+    ? Math.min(BAND_PX, (bodyColumns - 2) * CELL_PX)
+    : model === VSCODE
+      ? (bodyColumns - 2) * VSCODE_COLUMN_CELLS * VSCODE_CELL_PX
+      : bodyColumns
 
 export const clip = (s: string, max: number) => ([...s].length > max ? `${[...s].slice(0, max - 1).join('')}…` : s)
 
 export const fitBand = (t: BandText, room: number, model: Model): Fit => {
+  const fit = fitAll(t, room, model)
+  if (t.meters.length === 0) return fit
+  // Even the narrowest meters overflow: the branch is gone already, and the
+  // meters go from the right until the rest fits. The first always stays.
+  const least = model.ring === undefined ? model.bar.min : model.ring.size - model.ring.closer
+  const takes = (k: number) =>
+    t.meters.slice(0, k).reduce((w, m) => w + model.meter(m) + least, 0) + Math.max(0, k - 1) * model.gap + model.right(t.cache)
+  if (takes(t.meters.length) <= room) return fit
+  let k = t.meters.length - 1
+  while (k > 1 && takes(k) > room) k--
+  return { ...fitAll({ ...t, meters: t.meters.slice(0, k), branch: undefined }, room, model), meters: k }
+}
+
+const fitAll = (t: BandText, room: number, model: Model): Fit => {
   const n = t.meters.length
   const fixed = t.meters.reduce((w, m) => w + model.meter(m), 0) + Math.max(0, n - 1) * model.gap + model.right(t.cache)
   const barIn = (left: number) => (n === 0 ? model.bar.max : Math.min(model.bar.max, Math.floor(left / n)))
