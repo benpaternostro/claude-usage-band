@@ -266,3 +266,59 @@ test('the band and the drawer draw a fill near its limit amber or red', async ($
   expect([AMBER, RED, AMBER].map((color, i) => bars[i]?.includes(`fill="${color}"`))).toEqual([true, true, true])
   await desktop.unmount()
 })
+
+test('VS Code draws the band in SVG with plain words, the toggle its one button, and drops meters it has no room for', async ($, on) => {
+  mock.clock(on)
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('session.usage', () => ({ value: { startedAt: 0, ...RAW, context: { ...RAW.context, breakdown: BREAKDOWN } } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', () => ({
+    value: {
+      exitCode: 0,
+      stdout: ['/r/.git', '/r/.git', '/r', 'fix-band', ''].join('\n'),
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+
+  await $.session.measure({ ...RAW, changed: ['context', 'rateLimits', 'cost'] })
+  await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
+
+  const mount = (bodyColumns: number) =>
+    $.ui.mount({ plugin: 'usage-band', surface: 'vscode', ...BAND, props: { ...BAND.props, bodyColumns } })
+
+  let ui = await mount(120)
+  // VS Code draws every Button as a native button: the words are Text.
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual([OPEN_GLYPH])
+  expect(await ui.find({ type: 'Text', text: 'Session' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '36%' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'fix-band' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Cache' })).toBeUndefined()
+  // Three bars, then the branch icon, the divider and the clock.
+  const svgs = await ui.findAll({ type: 'Svg' })
+  expect(svgs.length).toBe(6)
+  expect(svgs[0]?.props.width).toBe(48)
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Text', text: 'Context window' })).toBeDefined()
+  expect(await ui.find({ key: 'd-ctx-bar' })).toBeDefined()
+  // The legend's cells wrap as VS Code fits them, all one width; the limits
+  // keep their row; no blank rows.
+  expect((await ui.find({ key: 'd-ctx-legend' }))?.props.flexWrap).toBe('wrap')
+  const cells = [await ui.find({ key: 'd-ctx-legend-0' }), await ui.find({ key: 'd-ctx-legend-1' })]
+  expect(cells[0]?.props.width).toBeGreaterThan(0)
+  expect(cells[1]?.props.width).toBe(cells[0]?.props.width)
+  expect((await ui.find({ key: 'd-lims-0' }))?.props.flexWrap).toBe('nowrap')
+  expect((await ui.findAll({ type: 'Box' }))[0]?.props.rowGap).toBe(0)
+  await ui.press({ key: 'details' })
+  await ui.unmount()
+
+  // Past rings, meters leave from the right rather than wrapping the row.
+  ui = await mount(42)
+  expect(await ui.find({ key: 'lim-five_hour' })).toBeDefined()
+  expect(await ui.find({ key: 'lim-seven_day' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'fix-band' })).toBeUndefined()
+  // Two meters have room for bars again.
+  expect((await ui.findAll({ type: 'Svg' }))[0]?.props.width).toBe(31)
+  await ui.unmount()
+})

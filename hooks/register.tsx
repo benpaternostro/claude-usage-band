@@ -3,7 +3,7 @@ import type { EngineInterface, Register, SessionContextUsage, SessionCost, Sessi
 
 import type { GitHead, Limit, Segment, Snapshot } from '../types'
 import { cacheText, cacheTtl } from './cache'
-import { BAR_CELLS, BAR_PX, CACHE_WORD, DESKTOP, GIT_WORD, ICON_PX, OPEN_GLYPH, TERMINAL, WORKTREE_NOTE, fitBand, roomOf } from './fit'
+import { BAR_CELLS, BAR_PX, CACHE_WORD, DESKTOP, GIT_WORD, ICON_PX, OPEN_GLYPH, TERMINAL, VSCODE, WORKTREE_NOTE, fitBand, roomOf } from './fit'
 import { HEAD_ARGV, branchName, isDetached, parseHead } from './git'
 
 const snapshot = atom({ plugin: 'usage-band', key: 'snapshot' } as const, null)
@@ -349,7 +349,7 @@ export const register: Register = on => {
     // unless it sits in a narrower column. A narrow one is `width` cells, or px
     // on the desktop.
     const bar = (id: string, bar: Bar, label: string, isWide: boolean, width = e.props.bodyColumns - 2) => {
-      if (e.surface === 'desktop') {
+      if (e.surface === 'desktop' || e.surface === 'vscode') {
         const { Svg } = $.ui.resolve(e)
         // A wide bar fills a row of its own, centred in it, so the text above
         // and below sits the same distance away.
@@ -388,27 +388,39 @@ export const register: Register = on => {
         ...b.parts.map(p => ({ color: p.color, title: p.title ?? '', tokens: p.tokens ?? 0 })),
         ...(b.rest ? [{ color: TRACK, title: b.rest, tokens: b.restTokens ?? 0 }] : []),
       ].sort((x, y) => y.tokens - x.tokens)
+      const cell = (key: string, it: (typeof items)[number], width: number) => {
+        const [name, ...rest] = it.title.split(' · ')
+        const value = rest.join(' · ').replace(/ \((\d+%)\)$/, '  $1')
+        return (
+          <Box key={key} width={width} flexShrink={0} flexDirection="row" columnGap={1}>
+            {dot(`${key}-dot`, it.color)}
+            <Box key={`${key}-n`} flexGrow={1} flexShrink={1}>
+              <Text dimColor wrap="truncate-end">
+                {name}
+              </Text>
+            </Box>
+            <Text dimColor>{value}</Text>
+          </Box>
+        )
+      }
+      // VS Code wraps a row too wide for it, and its band holds more cells
+      // than bodyColumns says: there the cells, each as wide as the longest,
+      // wrap as many to a row as fit.
+      if (e.surface === 'vscode') {
+        const width = Math.max(...items.map(it => 7 + it.title.replace(/ \(\d+%\)$/, '').length))
+        return (
+          <Box key={id} flexDirection="row" flexWrap="wrap" columnGap={3}>
+            {items.map((it, i) => cell(`${id}-${i}`, it, width))}
+          </Box>
+        )
+      }
       const width = Math.floor((e.props.bodyColumns - 2 - 3 * (cols - 1)) / cols)
       const rows = Array.from({ length: Math.max(1, Math.min(maxRows, Math.ceil(items.length / cols))) }, (_, r) => items.slice(r * cols, r * cols + cols))
       return (
         <Box key={id} flexDirection="column">
           {rows.map((row, r) => (
             <Box key={`${id}-r${r}`} flexDirection="row" columnGap={3}>
-              {row.map((it, c) => {
-                const [name, ...rest] = it.title.split(' · ')
-                const value = rest.join(' · ').replace(/ \((\d+%)\)$/, '  $1')
-                return (
-                  <Box key={`${id}-${r}-${c}`} width={width} flexDirection="row" columnGap={1}>
-                    {dot(`${id}-dot-${r}-${c}`, it.color)}
-                    <Box key={`${id}-n-${r}-${c}`} flexGrow={1} flexShrink={1}>
-                      <Text dimColor wrap="truncate-end">
-                        {name}
-                      </Text>
-                    </Box>
-                    <Text dimColor>{value}</Text>
-                  </Box>
-                )
-              })}
+              {row.map((it, c) => cell(`${id}-${r}-${c}`, it, width))}
             </Box>
           ))}
         </Box>
@@ -456,7 +468,8 @@ export const register: Register = on => {
       )
       const legendRows = Math.ceil((ctx.parts.length + (ctx.rest ? 1 : 0)) / cols)
       const base = 3 + 2 * limitRows.length
-      const hasGaps = base + legendRows + 1 + limitRows.length <= e.props.maxRows
+      // VS Code's rows run taller than its band allows for: no gaps there.
+      const hasGaps = e.surface !== 'vscode' && base + legendRows + 1 + limitRows.length <= e.props.maxRows
       return (
         <Box flexDirection="column" rowGap={hasGaps ? 1 : 0} paddingX={1}>
           <Box key="d-ctx" flexDirection="column">
@@ -479,11 +492,11 @@ export const register: Register = on => {
             <Button key="compact-now" variant="secondary" label="Compact session" onPress={() => $.session.compact()} />
           </Box>
           {limitRows.map((row, r) => (
-            <Box key={`d-lims-${r}`} flexDirection="row" columnGap={4}>
+            <Box key={`d-lims-${r}`} flexDirection="row" flexWrap="nowrap" columnGap={4}>
               {row.map((l, c) => {
                 const reset = resetText(l, now)
                 return (
-                  <Box key={`d-lim-${l.kind}`} flexDirection="column" flexGrow={1} flexShrink={1} width={`${Math.floor(100 / limitCols)}%`}>
+                  <Box key={`d-lim-${l.kind}`} flexDirection="column" flexGrow={1} flexShrink={1} width={`${Math.floor(100 / limitCols)}%`} minWidth={0}>
                     <Box key={`d-lim-row-${l.kind}`} flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
                       <Text wrap="truncate-end">{LONG_LABELS[l.kind] ?? l.kind}</Text>
                       <Text dimColor wrap="truncate-end">{`${reset}${reset ? '  ' : ''}${l.percentUsed}%`}</Text>
@@ -498,10 +511,14 @@ export const register: Register = on => {
       )
     }
 
-    // A desktop cell is about 8px wide: the band's inner gaps take half of one
-    // there. Terminal gaps are whole cells.
+    // The desktop and VS Code draw in pixels, with icons, SVG bars and rings;
+    // a cell is about 8px wide there, and the band's inner gaps take half of
+    // one. Terminal gaps are whole cells. VS Code draws every Button with its
+    // chrome, so there the words are Text and the toggle alone opens the drawer.
     const isDesktop = e.surface === 'desktop'
-    const half = isDesktop ? 0.5 : 1
+    const isVscode = e.surface === 'vscode'
+    const isPixel = isDesktop || isVscode
+    const half = isPixel ? 0.5 : 1
     const percentText = (percent: number | undefined) => (percent === undefined ? '—' : `${percent}%`)
 
     const meters = [
@@ -518,7 +535,7 @@ export const register: Register = on => {
     ]
     // The bars narrow, then turn to rings on the desktop, then the branch
     // shortens, before anything is dropped.
-    const model = isDesktop ? DESKTOP : TERMINAL
+    const model = isDesktop ? DESKTOP : isVscode ? VSCODE : TERMINAL
     const fit = fitBand(
       {
         meters: meters.map(m => ({ label: m.label, percent: percentText(m.percent), note: m.note })),
@@ -531,31 +548,44 @@ export const register: Register = on => {
     )
 
     const svg = (id: string, source: string, alt: string, width: number, height: number) => {
-      if (e.surface !== 'desktop') return null
+      if (e.surface !== 'desktop' && e.surface !== 'vscode') return null
       const { Svg } = $.ui.resolve(e)
       return <Svg key={id} source={source} alt={alt} width={width} height={height} />
     }
     const icon = (id: string, body: string, alt: string) => svg(id, svgIcon(body), alt, ICON_PX, ICON_PX)
+
+    // VS Code's Text has no padding, as the desktop's plain Buttons do: whole
+    // cells part its words.
+    const gap = isVscode ? 1 : half
+    // A word of the band that opens the drawer, or in VS Code just the word.
+    const word = (key: string, label: string, dimColor = false) =>
+      isVscode ? (
+        <Text key={key} dimColor={dimColor}>
+          {label}
+        </Text>
+      ) : (
+        <Button key={key} plain dimColor={dimColor} label={label} onPress={() => toggle($)} />
+      )
 
     const meter = ({ id, label, b, percent, note }: (typeof meters)[number]) => (
       <Box
         key={id}
         flexDirection="row"
         alignItems="center"
-        columnGap={half}
+        columnGap={gap}
         paddingX={half}
         flexShrink={0}
-        hover={{ backgroundColor: HOVER_BG }}
+        hover={isVscode ? undefined : { backgroundColor: HOVER_BG }}
       >
         {/* Only Buttons take a press, so each word of the meter is one: a click
             anywhere on its text opens the drawer. */}
-        <Button key={`${id}-label`} plain dimColor label={label} onPress={() => toggle($)} />
+        {word(`${id}-label`, label, true)}
         {/* A bar or ring takes no press, so on the desktop a blank plain Button
             lies over it. On a text surface that Button would paint over the bar's
             cells, so there the label and figures take the press alone. */}
         {/* A ring sits closer to its figure than to its label, so the two read
             as one. */}
-        <Box key={`${id}-fill`} flexDirection="row" alignItems="center" columnGap={fit.isRing ? 0 : half}>
+        <Box key={`${id}-fill`} flexDirection="row" alignItems="center" columnGap={fit.isRing ? (isVscode ? half : 0) : gap}>
           <Box flexDirection="row" alignItems="center">
             {fit.isRing
               ? svg(`${id}-bar`, svgRing((percent ?? 0) / 100, fit.bar, b.parts[0]?.color ?? BLUE), `${label} ${percent ?? 0}%`, fit.bar, fit.bar)
@@ -566,9 +596,9 @@ export const register: Register = on => {
               </Box>
             )}
           </Box>
-          <Button key={`${id}-pct`} plain label={percentText(percent)} onPress={() => toggle($)} />
+          {word(`${id}-pct`, percentText(percent))}
         </Box>
-        {note !== '' && <Button key={`${id}-note`} plain dimColor label={note} onPress={() => toggle($)} />}
+        {note !== '' && word(`${id}-note`, note, true)}
       </Box>
     )
 
@@ -579,14 +609,14 @@ export const register: Register = on => {
             being cut mid-word. The branch sits last and grows to push itself
             right, so it is the first to go, with the divider that parts it
             from the cache. On the desktop the meters' own padding spaces them. */}
-        <Box key="meters" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={model.gap} height={1} flexGrow={1} flexShrink={1} overflow="hidden">
-          {meters.map(meter)}
+        <Box key="meters" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={isVscode ? 1 : model.gap} height={1} flexGrow={1} flexShrink={1} overflow="hidden">
+          {meters.slice(0, fit.meters ?? meters.length).map(meter)}
           {head && fit.branch !== undefined && (
-            <Box key="git" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={half} paddingLeft={isDesktop ? 0 : 1} flexGrow={1} flexShrink={0}>
+            <Box key="git" flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={half} paddingLeft={isPixel ? 0 : 1} flexGrow={1} flexShrink={0}>
               <Box key="git-name" flexDirection="row" alignItems="center" columnGap={half}>
-                {isDesktop && icon('git-icon', head.worktree === undefined ? ICONS.branch : ICONS.worktree, head.worktree === undefined ? 'Branch' : 'Worktree branch')}
+                {isPixel && icon('git-icon', head.worktree === undefined ? ICONS.branch : ICONS.worktree, head.worktree === undefined ? 'Branch' : 'Worktree branch')}
                 {/* The terminal has no icons: a label stands in, as "Cache" does. */}
-                {!isDesktop && <Text dimColor>{GIT_WORD}</Text>}
+                {!isPixel && <Text dimColor>{GIT_WORD}</Text>}
                 <Text>{fit.branch}</Text>
                 {/* A name shown short is whole under the pointer, drawn over the
                     row and ending where the short one does. Unkeyed, so the
@@ -601,28 +631,29 @@ export const register: Register = on => {
                     right={0}
                     display="none"
                     hover={{ display: 'flex' }}
-                    backgroundColor={isDesktop ? TIP_BG : undefined}
-                    paddingX={isDesktop ? half : 0}
+                    backgroundColor={isPixel ? TIP_BG : undefined}
+                    paddingX={isPixel ? half : 0}
                   >
-                    <Text color={isDesktop ? TIP_TEXT : undefined}>{head.branch}</Text>
+                    <Text color={isPixel ? TIP_TEXT : undefined}>{head.branch}</Text>
                   </Box>
                 )}
               </Box>
-              {!isDesktop && head.worktree !== undefined && <Text dimColor>{WORKTREE_NOTE}</Text>}
+              {!isPixel && head.worktree !== undefined && <Text dimColor>{WORKTREE_NOTE}</Text>}
               <Box key="git-divider" marginLeft={half} flexDirection="row" alignItems="center">
                 {/* With an empty alt the desktop drew nothing here. */}
-                {isDesktop ? svg('divider', SVG_DIVIDER, 'Separator', 1, 14) : <Text dimColor>│</Text>}
+                {isPixel ? svg('divider', SVG_DIVIDER, 'Separator', 1, 14) : <Text dimColor>│</Text>}
               </Box>
             </Box>
           )}
         </Box>
         <Box key="band-right" flexDirection="row" alignItems="center" columnGap={2 * half} flexShrink={0}>
           {/* The time's Button pads it enough from the clock, so they sit as
-              close as the branch and its icon; the terminal's word keeps a cell. */}
+              close as the branch and its icon; VS Code's Text needs the half
+              cell, and the terminal's word keeps a whole one. */}
           <Box key="cache" flexDirection="row" alignItems="center" columnGap={isDesktop ? 0 : half}>
             {/* An icon or a dim word, then the value bright, as the branch is. */}
-            {isDesktop ? icon('cache-icon', ICONS.clock, 'Prompt cache') : <Button key="cache-label" plain dimColor label={CACHE_WORD} onPress={() => toggle($)} />}
-            <Button key="cache-time" plain label={cacheLabel} onPress={() => toggle($)} />
+            {isPixel ? icon('cache-icon', ICONS.clock, 'Prompt cache') : word('cache-label', CACHE_WORD, true)}
+            {word('cache-time', cacheLabel)}
           </Box>
           {toggleButton}
         </Box>
