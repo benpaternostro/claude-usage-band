@@ -165,11 +165,18 @@ The **CI** workflow runs the unit tests, `claude plugin validate .` and `claude 
 
 ### Release
 
-1. In the Actions tab, run **Release PR** and pick a patch, minor or major bump. It runs the tests, bumps the version in `.claude-plugin/plugin.json`, and opens a release PR with drafted release notes as its description.
-2. Edit the release notes in the PR description if needed, then merge the PR.
-3. The **Release** workflow runs when the new version reaches `main`. It tags `usage-band--v<version>` and publishes the GitHub release with the PR description as its notes.
+Merging to `main` releases the mod when the merge changes its files: `hooks/`, `types/` or `.claude-plugin/`. The **Release** workflow runs the tests, bumps the version in `.claude-plugin/plugin.json` on `main`, tags `usage-band--v<version>`, and publishes the GitHub release with notes listing the merged PRs.
 
-Installed copies update when the version changes. A version bump merged by hand is released too, with GitHub's generated notes.
+Label the PR to set the bump:
+
+| Label | Release |
+| --- | --- |
+| none | Patch: `0.3.0` → `0.3.1` |
+| `minor` | Minor: `0.3.0` → `0.4.0` |
+| `major` | Major: `0.3.0` → `1.0.0` |
+| `no-release` | Nothing |
+
+A PR that sets the version in `plugin.json` itself is released at that version. Merges that only change docs, tests or workflows release nothing.
 
 ### Layout
 
@@ -184,7 +191,8 @@ Installed copies update when the version changes. A version bump merged by hand 
 | `tests/band.test.ts` | Helper, git and render tests |
 | `tests/cache.test.mjs` | Cache countdown tests (`node --test`) |
 | `tests/fit.test.mjs` | Width budget tests (`node --test`) |
-| `.github/workflows/` | CI, the release PR, and the tag and GitHub release |
+| `.github/workflows/` | CI, and the release on each merge to `main` |
+| `.github/scripts/release-plan.sh` | Decides what a merge releases |
 
 ## License
 
