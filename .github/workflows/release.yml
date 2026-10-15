@@ -1,78 +1,102 @@
 name: Release
 
-# Runs when a new version in plugin.json reaches main: tags it
-# usage-band--v<version> and publishes the GitHub release. The notes are the
-# merged release PR's description when the Release PR workflow opened it, and
-# GitHub's generated notes otherwise. A version that is already tagged is
-# skipped, so other edits to plugin.json release nothing.
+# Every push to main that changes the plugin releases it. The merged PR's
+# label sets the bump: `major`, `minor`, or a patch when it has neither; a
+# `no-release` label skips it. A push that sets the version itself releases
+# that version as it is. Pushes that only touch docs, tests or workflows
+# release nothing. A release bumps plugin.json on main, tags
+# usage-band--v<version> and publishes the GitHub release.
 
 on:
   push:
     branches: [main]
-    paths: [.claude-plugin/plugin.json]
-  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: read
 
-concurrency: release
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  check:
+  plan:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      tagged: ${{ steps.version.outputs.tagged }}
+      bump: ${{ steps.plan.outputs.bump }}
     steps:
       - uses: actions/checkout@v5
-      - id: version
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          version=$(jq -r .version .claude-plugin/plugin.json)
-          tag="usage-band--v$version"
-          tagged=false
-          if git ls-remote --exit-code --tags origin "$tag" >/dev/null; then tagged=true; fi
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "tag=$tag" >>"$GITHUB_OUTPUT"
-          echo "tagged=$tagged" >>"$GITHUB_OUTPUT"
-          if $tagged; then echo "::notice::$tag is already released"; fi
+          bash .github/scripts/release-plan.sh "$BEFORE" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+          grep '^reason=' "$GITHUB_OUTPUT" | tail -1 | sed 's/^reason=/::notice::Release: /'
 
   test:
-    needs: check
-    if: needs.check.outputs.tagged == 'false'
+    needs: plan
+    if: needs.plan.outputs.bump != 'skip'
     uses: ./.github/workflows/ci.yml
 
   publish:
-    needs: [check, test]
+    needs: [plan, test]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       DISABLE_AUTOUPDATER: 1
-      VERSION: ${{ needs.check.outputs.version }}
-      TAG: ${{ needs.check.outputs.tag }}
+      BUMP: ${{ needs.plan.outputs.bump }}
     steps:
+      # A version set by the push is released at that commit; a bump goes on
+      # top of main as it is now.
       - uses: actions/checkout@v5
         with:
+          ref: ${{ needs.plan.outputs.bump == 'none' && github.sha || 'main' }}
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: Install Claude Code
         run: npm install --global @anthropic-ai/claude-code
-
-      - name: Tag the version
-        run: |
+      - run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          claude plugin tag . --push
+
+      - name: Bump the version
+        if: env.BUMP != 'none'
+        run: |
+          old=$(jq -r .version .claude-plugin/plugin.json)
+          IFS=. read -r major minor patch <<<"$old"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          new="$major.$minor.$patch"
+          sed -i "s/\"version\": \"$old\"/\"version\": \"$new\"/" .claude-plugin/plugin.json
+          test "$(jq -r .version .claude-plugin/plugin.json)" = "$new"
+          git commit -am "Release usage-band v$new"
+          git push origin HEAD:main
+
+      - name: Tag the version
+        run: claude plugin tag . --push
 
       - name: Publish the release
         run: |
-          body=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].body // ""')
-          notes=(--generate-notes)
-          if grep -q '<!-- release-notes' <<<"$body"; then
-            printf '%s\n' "$body" >"$RUNNER_TEMP/notes.md"
-            notes=(--notes-file "$RUNNER_TEMP/notes.md")
-          fi
-          gh release create "$TAG" --verify-tag --latest --title "usage-band v$VERSION" "${notes[@]}"
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          tag="usage-band--v$version"
+          args=(-f tag_name="$tag")
+          previous=$(git describe --tags --abbrev=0 --match 'usage-band--v*' "$tag^" 2>/dev/null || true)
+          if [ -n "$previous" ]; then args+=(-f previous_tag_name="$previous"); fi
+          {
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body
+            echo
+            echo '## Update'
+            echo
+            echo '```bash'
+            echo 'claude plugin update usage-band@claude-usage-band'
+            echo '```'
+          } >"$RUNNER_TEMP/notes.md"
+          gh release create "$tag" --verify-tag --latest --title "usage-band v$version" --notes-file "$RUNNER_TEMP/notes.md"
