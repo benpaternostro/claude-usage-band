@@ -270,28 +270,33 @@ test('the band and the drawer draw a fill near its limit amber or red', async ($
 
 const SUMMARY: SessionMessage = { role: 'user', text: 'Summary', toolUses: [] }
 
-// A plugin an administrator prepends may continue past the user tier, so the
-// band's own session.compact hook never runs. The kit's compaction from a
-// plugin's $ has no transcript to pass on, so that one it answers itself.
+// A plugin an administrator prepends may continue past the user tier, so
+// neither the band's session.compact hook nor its classic hooks run.
 const SKIPS_COMPACT = {
   name: 'skips-compact',
   tier: 'prepend',
   register(on) {
-    on('session.compact', ($, e, next) =>
-      next.origin.plugin === 'engine' ? next.to(e, 'append') : { messages: [{ role: 'user', text: 'Summary', toolUses: [] }] },
-    )
+    on('session.compact', (_, e, next) => next.to(e, 'append'))
+    on('classic.PostCompact', (_, e, next) => next.to(e, 'append'))
   },
 } satisfies Plugin
 
 test('a compaction clears the cache countdown when a plugin above skips the band', { plugins: [SKIPS_COMPACT] }, async ($, on) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
+  // A compacted window has no fill until its next response.
+  let isCompacted = false
   on('session.measure', (_, e) => ({ changed: e.changed }))
-  on('session.usage', () => ({ value: { startedAt: 0, ...RAW, context: { ...RAW.context, breakdown: BREAKDOWN } } }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, ...RAW, context: { ...(isCompacted ? { window: 200_000 } : RAW.context), breakdown: BREAKDOWN } },
+  }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('process.run', () => ({
     value: { exitCode: 128, stdout: '', stderr: 'not a git repository', isStdoutTruncated: false, isStderrTruncated: false },
   }))
-  on('session.compact', () => ({ messages: [SUMMARY] }))
+  on('session.compact', () => {
+    isCompacted = true
+    return { messages: [SUMMARY] }
+  })
   on('classic.PostCompact', () => ({}))
   let expiresAt: unknown = null
   let version = 1
@@ -311,21 +316,15 @@ test('a compaction clears the cache countdown when a plugin above skips the band
     return text
   }
 
-  // /compact or auto-compact, an hour after a response: the engine runs
-  // PostCompact once the compaction stands.
-  expiresAt = 3_600_000
+  // An hour after a response, the window still filled: the countdown runs.
+  expiresAt = 3_601_000
+  await clock.advance(1000)
   expect(await cacheTime()).toBe('60m')
+
+  // /compact or auto-compact: within a second the window has no fill.
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
   await $.classic.PostCompact({ trigger: 'manual', compact_summary: '' })
-  expect(await cacheTime()).toBe('—')
-
-  // The drawer's button.
-  expiresAt = 3_600_000
-  const ui = await $.ui.mount({ plugin: 'usage-band', surface: 'terminal', ...BAND })
-  await ui.press({ key: 'details' })
-  await ui.press({ key: 'compact-now' })
-  await ui.press({ key: 'details' })
-  await ui.unmount()
+  await clock.advance(1000)
   expect(await cacheTime()).toBe('—')
 })
 

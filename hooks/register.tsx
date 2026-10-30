@@ -258,15 +258,23 @@ async function refreshGit($: EngineInterface) {
   await update($, git, () => head)
 }
 
-async function toggle($: EngineInterface) {
-  await update($, isOpen, open => !open)
+// Each second: redraw, and drop a countdown whose window lost its fill. A
+// compaction leaves no fill until the next response, and a managed plugin
+// above may send session.compact, and every classic event, past the hooks
+// below.
+async function tick($: EngineInterface) {
+  if ((await read($, cacheExpiresAt)) !== null) {
+    const { context } = await $.session.usage()
+    if (context.tokens === undefined) {
+      await update($, cacheExpiresAt, () => null)
+      await refresh($)
+    }
+  }
+  $.ui.invalidate('ui.render')
 }
 
-// The band's own compaction clears the cache countdown from its result, as
-// the session.compact hook may be skipped.
-async function compact($: EngineInterface) {
-  const result = await $.session.compact()
-  if (result.skip === undefined) await update($, cacheExpiresAt, () => null)
+async function toggle($: EngineInterface) {
+  await update($, isOpen, open => !open)
 }
 
 export const register: Register = on => {
@@ -277,7 +285,7 @@ export const register: Register = on => {
     await update($, isOpen, () => false)
     await update($, cacheExpiresAt, () => null)
     await Promise.all([refresh($), refreshGit($)])
-    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    ticker ??= $.clock.every(1000, () => void tick($))
     return result
   })
 
@@ -330,14 +338,6 @@ export const register: Register = on => {
     return result
   })
 
-  // A managed plugin above may send session.compact past the hook above;
-  // PostCompact still says a compaction stood.
-  on('classic.PostCompact', async ($, e, next) => {
-    const result = await next(e)
-    if (!e.agent_id) await update($, cacheExpiresAt, () => null)
-    return result
-  })
-
   on('session.measure', async ($, e, next) => {
     if (e.changed.includes('context')) {
       await refresh($)
@@ -356,7 +356,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const now = await $.clock.now()
     const open = await read($, isOpen)
-    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    ticker ??= $.clock.every(1000, () => void tick($))
     const cacheLabel = cacheText(await read($, cacheExpiresAt), now)
     const head = await read($, git)
 
@@ -504,7 +504,7 @@ export const register: Register = on => {
               {s.usd !== undefined && <Text dimColor>· Session cost</Text>}
               {s.usd !== undefined && <Text dimColor>{`$${s.usd.toFixed(2)}`}</Text>}
             </Box>
-            <Button key="compact-now" variant="secondary" label="Compact session" onPress={() => compact($)} />
+            <Button key="compact-now" variant="secondary" label="Compact session" onPress={() => $.session.compact()} />
           </Box>
           {limitRows.map((row, r) => (
             <Box key={`d-lims-${r}`} flexDirection="row" flexWrap="nowrap" columnGap={4}>
