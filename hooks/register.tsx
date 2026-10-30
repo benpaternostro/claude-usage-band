@@ -262,6 +262,13 @@ async function toggle($: EngineInterface) {
   await update($, isOpen, open => !open)
 }
 
+// The band's own compaction clears the cache countdown from its result, as
+// the session.compact hook may be skipped.
+async function compact($: EngineInterface) {
+  const result = await $.session.compact()
+  if (result.skip === undefined) await update($, cacheExpiresAt, () => null)
+}
+
 export const register: Register = on => {
   let ticker: ReturnType<EngineInterface['clock']['every']> | undefined
 
@@ -320,6 +327,14 @@ export const register: Register = on => {
     if (!e.agentId && e.trigger !== 'precompute' && result.skip === undefined) {
       await update($, cacheExpiresAt, () => null)
     }
+    return result
+  })
+
+  // A managed plugin above may send session.compact past the hook above;
+  // PostCompact still says a compaction stood.
+  on('classic.PostCompact', async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agent_id) await update($, cacheExpiresAt, () => null)
     return result
   })
 
@@ -489,7 +504,7 @@ export const register: Register = on => {
               {s.usd !== undefined && <Text dimColor>· Session cost</Text>}
               {s.usd !== undefined && <Text dimColor>{`$${s.usd.toFixed(2)}`}</Text>}
             </Box>
-            <Button key="compact-now" variant="secondary" label="Compact session" onPress={() => $.session.compact()} />
+            <Button key="compact-now" variant="secondary" label="Compact session" onPress={() => compact($)} />
           </Box>
           {limitRows.map((row, r) => (
             <Box key={`d-lims-${r}`} flexDirection="row" flexWrap="nowrap" columnGap={4}>
