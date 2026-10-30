@@ -1,5 +1,6 @@
-import type { SessionContextBreakdown } from 'claude-code'
+import type { SessionContextBreakdown, SessionMessage } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { Plugin } from 'claude-code/testing'
 
 import { CLOSE_GLYPH, OPEN_GLYPH, contextBar, contextColor, fillColor, kTokens, relative, resetIn, resetText, textCells } from '../hooks/register'
 import { branchName, isDetached, parseHead } from '../hooks/git'
@@ -265,6 +266,66 @@ test('the band and the drawer draw a fill near its limit amber or red', async ($
   const bars = (await desktop.findAll({ type: 'Svg' })).slice(0, 3).map(svg => String(svg.props.source))
   expect([AMBER, RED, AMBER].map((color, i) => bars[i]?.includes(`fill="${color}"`))).toEqual([true, true, true])
   await desktop.unmount()
+})
+
+const SUMMARY: SessionMessage = { role: 'user', text: 'Summary', toolUses: [] }
+
+// A plugin an administrator prepends may continue past the user tier, so
+// neither the band's session.compact hook nor its classic hooks run.
+const SKIPS_COMPACT = {
+  name: 'skips-compact',
+  tier: 'prepend',
+  register(on) {
+    on('session.compact', (_, e, next) => next.to(e, 'append'))
+    on('classic.PostCompact', (_, e, next) => next.to(e, 'append'))
+  },
+} satisfies Plugin
+
+test('a compaction clears the cache countdown when a plugin above skips the band', { plugins: [SKIPS_COMPACT] }, async ($, on) => {
+  const clock = mock.clock(on)
+  // A compacted window has no fill until its next response.
+  let isCompacted = false
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, ...RAW, context: { ...(isCompacted ? { window: 200_000 } : RAW.context), breakdown: BREAKDOWN } },
+  }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('process.run', () => ({
+    value: { exitCode: 128, stdout: '', stderr: 'not a git repository', isStdoutTruncated: false, isStderrTruncated: false },
+  }))
+  on('session.compact', () => {
+    isCompacted = true
+    return { messages: [SUMMARY] }
+  })
+  on('classic.PostCompact', () => ({}))
+  let expiresAt: unknown = null
+  let version = 1
+  on('state.get', (_, e, next) => (e.key === 'cacheExpiresAt' ? { value: { value: expiresAt, version } } : next(e)))
+  on('state.set', (_, e, next) => {
+    if (e.key !== 'cacheExpiresAt') return next(e)
+    expiresAt = e.value
+    return { value: { isSet: true, version: ++version } }
+  })
+
+  await $.session.measure({ ...RAW, changed: ['context', 'rateLimits', 'cost'] })
+  await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
+  const cacheTime = async () => {
+    const ui = await $.ui.mount({ plugin: 'usage-band', surface: 'terminal', ...BAND })
+    const text = (await ui.find({ key: 'cache-time' }))?.text
+    await ui.unmount()
+    return text
+  }
+
+  // An hour after a response, the window still filled: the countdown runs.
+  expiresAt = 3_601_000
+  await clock.advance(1000)
+  expect(await cacheTime()).toBe('60m')
+
+  // /compact or auto-compact: within a second the window has no fill.
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
+  await $.classic.PostCompact({ trigger: 'manual', compact_summary: '' })
+  await clock.advance(1000)
+  expect(await cacheTime()).toBe('—')
 })
 
 test('VS Code draws the band in SVG with plain words, the toggle its one button, and drops meters it has no room for', async ($, on) => {

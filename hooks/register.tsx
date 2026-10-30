@@ -258,6 +258,21 @@ async function refreshGit($: EngineInterface) {
   await update($, git, () => head)
 }
 
+// Each second: redraw, and drop a countdown whose window lost its fill. A
+// compaction leaves no fill until the next response, and a managed plugin
+// above may send session.compact, and every classic event, past the hooks
+// below.
+async function tick($: EngineInterface) {
+  if ((await read($, cacheExpiresAt)) !== null) {
+    const { context } = await $.session.usage()
+    if (context.tokens === undefined) {
+      await update($, cacheExpiresAt, () => null)
+      await refresh($)
+    }
+  }
+  $.ui.invalidate('ui.render')
+}
+
 async function toggle($: EngineInterface) {
   await update($, isOpen, open => !open)
 }
@@ -270,7 +285,7 @@ export const register: Register = on => {
     await update($, isOpen, () => false)
     await update($, cacheExpiresAt, () => null)
     await Promise.all([refresh($), refreshGit($)])
-    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    ticker ??= $.clock.every(1000, () => void tick($))
     return result
   })
 
@@ -341,7 +356,7 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const now = await $.clock.now()
     const open = await read($, isOpen)
-    ticker ??= $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    ticker ??= $.clock.every(1000, () => void tick($))
     const cacheLabel = cacheText(await read($, cacheExpiresAt), now)
     const head = await read($, git)
 
